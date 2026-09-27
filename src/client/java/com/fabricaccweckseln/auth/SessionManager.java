@@ -1,63 +1,29 @@
 package com.fabricaccweckseln.auth;
 
 import com.fabricaccweckseln.client.mixin.MinecraftClientSessionAccess;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.Session;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.User;
 
-import java.lang.reflect.Constructor;
 import java.util.Optional;
+import java.util.UUID;
 
 public final class SessionManager {
     private SessionManager() {
     }
 
-    public static Session createSession(String username, String uuid, String accessToken) {
-        try {
-            Constructor<Session> constructor = Session.class.getDeclaredConstructor(
-                    String.class,
-                    String.class,
-                    String.class,
-                    String.class,
-                    String.class,
-                    String.class,
-                    Session.AccountType.class
-            );
-            constructor.setAccessible(true);
-            return constructor.newInstance(username, uuid, accessToken, "",
-                    "", "", Session.AccountType.MSA);
-        } catch (Exception ignored) {
-            try {
-                Constructor<Session> constructor = Session.class.getDeclaredConstructor(
-                        String.class,
-                        String.class,
-                        String.class,
-                        String.class
-                );
-                constructor.setAccessible(true);
-                return constructor.newInstance(username, uuid, accessToken, "mojang");
-            } catch (Exception ex) {
-                try {
-                    Constructor<Session> constructor = Session.class.getDeclaredConstructor(
-                            String.class,
-                            String.class,
-                            String.class,
-                            String.class,
-                            Optional.class,
-                            Session.AccountType.class
-                    );
-                    constructor.setAccessible(true);
-                    return constructor.newInstance(username, uuid, accessToken, "", Optional.empty(), Session.AccountType.MSA);
-                } catch (Exception fallbackError) {
-                    throw new IllegalStateException("Unable to create a valid Session instance for the current Minecraft version.", fallbackError);
-                }
-            }
+    public static User createUser(String username, String uuid, String accessToken) {
+        return new User(username, UUID.fromString(uuid), accessToken, Optional.empty(), Optional.empty());
+    }
+
+    public static void applyUser(User user) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null) {
+            ((MinecraftClientSessionAccess) minecraft).mcfabricaccweckseln$setUser(user);
         }
     }
 
-    public static void applySession(Session session) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client != null) {
-            ((MinecraftClientSessionAccess) client).mcfabricaccweckseln$setSession(session);
-        }
+    public static User getCurrentUser() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft != null ? ((MinecraftClientSessionAccess) minecraft).mcfabricaccweckseln$getUser() : null;
     }
 }

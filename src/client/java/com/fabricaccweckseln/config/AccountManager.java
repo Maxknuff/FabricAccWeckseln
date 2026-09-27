@@ -3,8 +3,7 @@ package com.fabricaccweckseln.config;
 import com.fabricaccweckseln.MCFabricAccWeckseln;
 import com.fabricaccweckseln.auth.MicrosoftAuthService;
 import com.fabricaccweckseln.auth.SessionManager;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.Session;
+import net.minecraft.client.User;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -40,8 +39,8 @@ public class AccountManager {
         accounts.sort(Comparator.comparingLong(AccountProfile::getLastUsed).reversed());
         if (!accounts.isEmpty()) {
             activeAccount = accounts.get(0);
+            refreshActiveAccountAsync();
         }
-        refreshActiveAccountAsync();
     }
 
     public boolean addAccount(AccountProfile account) {
@@ -49,9 +48,11 @@ public class AccountManager {
             return false;
         }
 
-        for (int index = 0; index < accounts.size(); index++) {
-            if (Objects.equals(accounts.get(index).uuid, account.uuid)) {
-                accounts.set(index, account);
+        for (AccountProfile existing : accounts) {
+            if (Objects.equals(existing.uuid, account.uuid)) {
+                existing.username = account.username;
+                existing.refreshToken = account.refreshToken;
+                existing.lastUsed = account.lastUsed;
                 persist();
                 return true;
             }
@@ -78,21 +79,17 @@ public class AccountManager {
         if (account == null) {
             return;
         }
-        AccountProfile resolved = null;
-        for (AccountProfile candidate : accounts) {
-            if (Objects.equals(candidate.uuid, account.uuid)) {
-                resolved = candidate;
+        AccountProfile target = account;
+        for (AccountProfile available : accounts) {
+            if (Objects.equals(available.uuid, account.uuid)) {
+                target = available;
                 break;
             }
         }
-        if (resolved == null) {
-            addAccount(account);
-            resolved = account;
-        }
-        resolved.lastUsed = System.currentTimeMillis();
-        activeAccount = resolved;
+        target.lastUsed = System.currentTimeMillis();
+        activeAccount = target;
         persist();
-        refreshActiveAccountAsync();
+        switchAccount(target);
     }
 
     public void persist() {
@@ -104,39 +101,39 @@ public class AccountManager {
             return;
         }
 
-        Thread thread = new Thread(() -> {
+        Thread worker = new Thread(() -> {
             try {
-                MicrosoftAuthService authService = new MicrosoftAuthService();
-                AccountProfile refreshed = authService.refreshAccount(activeAccount);
+                MicrosoftAuthService service = new MicrosoftAuthService();
+                AccountProfile refreshed = service.refreshAccount(activeAccount);
                 if (refreshed != null) {
-                    Session session = SessionManager.createSession(refreshed.username, refreshed.uuid, refreshed.accessToken);
-                    SessionManager.applySession(session);
+                    User user = SessionManager.createUser(refreshed.username, refreshed.uuid, refreshed.accessToken);
+                    SessionManager.applyUser(user);
                     activeAccount = refreshed;
                     persist();
                 }
             } catch (Exception ex) {
-                MCFabricAccWeckseln.LOGGER.warn("Failed to refresh active account in the background", ex);
+                MCFabricAccWeckseln.LOGGER.warn("Failed to refresh account quietly in the background", ex);
             }
         }, "MCFabricAccWeckseln-Refresh");
-        thread.setDaemon(true);
-        thread.start();
+        worker.setDaemon(true);
+        worker.start();
     }
 
-    public void applyAccount(AccountProfile account) {
+    public void switchAccount(AccountProfile account) {
         if (account == null) {
             return;
         }
 
         try {
-            MicrosoftAuthService authService = new MicrosoftAuthService();
-            AccountProfile refreshed = authService.refreshAccount(account);
-            Session session = SessionManager.createSession(refreshed.username, refreshed.uuid, refreshed.accessToken);
-            SessionManager.applySession(session);
+            MicrosoftAuthService service = new MicrosoftAuthService();
+            AccountProfile refreshed = service.refreshAccount(account);
+            User user = SessionManager.createUser(refreshed.username, refreshed.uuid, refreshed.accessToken);
+            SessionManager.applyUser(user);
             activeAccount = refreshed;
-            account.lastUsed = System.currentTimeMillis();
+            activeAccount.lastUsed = System.currentTimeMillis();
             persist();
         } catch (Exception ex) {
-            MCFabricAccWeckseln.LOGGER.error("Unable to switch account", ex);
+            MCFabricAccWeckseln.LOGGER.error("Unable to switch Minecraft account", ex);
         }
     }
 }
